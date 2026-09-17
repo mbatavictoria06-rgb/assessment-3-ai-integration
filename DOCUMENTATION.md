@@ -88,7 +88,7 @@ The database consists of a single SQLite table: `Job`.
 ### Model Parameters and Why
 - **What is it?** Tuning values like temperature, tokens, and timeouts.
 - **Why is it needed here?** To balance deterministic accuracy with analytical flexibility and protect against runaway generation.
-- **How did I implement it?** Via `src/config.ts`. Extraction uses Temperature `0.1` and Max Tokens `1000`. Auditor uses Temperature `0.4` and Max Tokens `500`. Timeout is strictly set to `90,000 ms`.
+- **How did I implement it?** Via `src/config.ts`. Extraction uses Temperature `0.1` and Max Tokens `4096`. Auditor uses Temperature `0.4` and Max Tokens `500`. Timeout is strictly set to `90,000 ms`.
 - **What did I choose against, and why?** Chosen against default parameters (which typically use temperature 1.0) because expense extraction requires strict, near-zero hallucination formatting.
 
 ### Structured Output/Schema Validation
@@ -137,22 +137,22 @@ The database consists of a single SQLite table: `Job`.
 - **What did I choose against, and why?** Chosen against ignoring costs, as AI features without cost models are dangerous in production SaaS environments.
 
 ## 6. What Went Wrong
-1. **Symptom:** The background extraction jobs failed instantly with HTTP 503 "Service Unavailable" errors.
-   **Investigation:** Checked the terminal worker logs (`raw_model_outputs.jsonl`) which explicitly captured the 503 errors from the `@google/genai` SDK on the models `gemini-3.8-flash` and `gemini-3.7-flash`.
-   **Cause:** The specific Gemini model versions were experiencing temporary high-demand provider outages/capacity limits.
-   **Fix:** Downgraded the model identifier configuration to the stable `gemini-3.6-flash`.
+1. **Symptom:** Extraction troubleshooting occasionally encountered truncated or incomplete structured JSON responses.
+   **Investigation:** Evaluated the evidence and observed that the JSON payload would stop mid-string.
+   **Cause:** No definite provider-side root cause was identified, though adjusting token limits mitigated the issue.
+   **Fix:** Increased `EXTRACTION_MAX_TOKENS` from 1000 to 4096 to provide sufficient generation headroom for `gemini-3.6-flash`.
 
-2. **Symptom:** The Policy Auditor request would fail repeatedly without returning an assessment.
-   **Investigation:** Console logs revealed that the `Promise.race` timeout exception was being thrown, cancelling the AI request prematurely.
-   **Cause:** The initial timeout was set too strictly to 15 seconds. Provider latency spikes during peak hours caused the Gemini API to take roughly 76 seconds to respond, meaning the application aborted the request before Gemini could finish.
-   **Fix:** Increased the system timeout parameter from 15,000ms to 90,000ms to safely accommodate provider latency spikes while still guaranteeing an eventual fallback.
+2. **Symptom:** The Policy Auditor request would occasionally fail due to timeouts.
+   **Investigation:** Console logs revealed that the `Promise.race` timeout exception was being thrown, cancelling the AI request prematurely after 15 seconds.
+   **Fix:** Increased the system timeout parameter from 15,000ms to 90,000ms to safely accommodate provider latency spikes. Note that due to API quota exhaustion, a fully successful live audit result is not demonstrated in the current evidence, but the functionality remains structurally intact for when quota is available.
 
-3. **Symptom:** The `gemini-3.6-flash` model began returning `429 Quota Exceeded` errors, and the worker immediately looped the retries, failing the job in 6 seconds.
-   **Investigation:** Inspected the JSON evidence logs and found the exact error: `"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"`, with a strict limit of 20.
-   **Cause:** The worker's immediate polling loop caused it to instantly retry 3 times against a rate limit block. Furthermore, the project's hard 20-request daily limit on the free tier had been completely exhausted.
-   **Fix:** Implemented a 10-second exponential backoff delay in the worker thread before releasing the queue slot to improve retry resilience. However, because the limit exhausted was the strict daily (RPD) quota of 20, the jobs correctly and safely transitioned to a terminal `failed` state until the daily quota resets.
+3. **Symptom:** The `gemini-3.6-flash` model began returning `RESOURCE_EXHAUSTED` / `429 Quota Exceeded` errors.
+   **Investigation:** Inspected the JSON evidence logs and found quota-exceeded errors.
+   **Cause:** The project's provider quota had been completely exhausted.
+   **Fix:** The worker retry and exponential backoff logic was exercised. The jobs eventually and correctly transitioned to a terminal `failed` state because the provider quota was fully exhausted.
 
 ## 7. What This Slice Does Not Handle
+- **Single Receipt Processing:** The current UI processes exactly one receipt at a time. It does not support simultaneous multi-file selection.
 - **Scale Limitations:** The local SQLite database and in-memory rate limiting map will not scale across multiple serverless edge functions or scaled Kubernetes pods.
 - **Out of Scope:** User authentication and multi-tenant data isolation were out of scope for this slice. Anyone with access can view the jobs.
 - **Storage Cleanup:** The system does not currently run cron jobs to purge the `/uploads` directory or old SQLite rows, meaning disk space will eventually fill up (omitted due to time constraints).
