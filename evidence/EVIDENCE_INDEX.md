@@ -7,10 +7,10 @@ This document maps the assessment requirements to their corresponding execution 
 | **Upload interface** | Verified. React components render strictly. | `src/app/page.tsx` |
 | **Valid upload** | Verified. Successfully saves UUID filename. | `src/app/api/upload/route.ts`, local `/uploads` dir |
 | **Job ID & Pending/Processing** | Verified. UI polls and transitions badges seamlessly. | `src/app/page.tsx`, `src/app/api/job/[id]/route.ts` |
-| **Completed extraction** | Unverified Live. Missing API key. | Expected in `resultData` via `worker.ts` |
+| **Completed extraction** | VERIFIED from captured successful model output and parsed structured result. (Current live provider access may be quota-limited). | `evidence/raw_model_outputs.jsonl` |
 | **Structured Result UI** | Verified via structure. Renders JSON nicely when done. | `src/app/page.tsx` (Pre-formatted block) |
 | **Policy Auditor Button** | Verified. Button active only when `status === "done"`. | `src/app/page.tsx` |
-| **Auditor Result UI** | Verified via structure. Shows flags/risk level cleanly. | `src/app/page.tsx` |
+| **Auditor Result UI** | UI structural readiness verified. Successful Policy Auditor result independently captured in raw logs. | UI: `src/app/page.tsx`, Logs: `evidence/raw_model_outputs.jsonl` |
 | **Validation Failure** | Verified natively. Zod error captured successfully. | `task-876.log` (Fixture test sequence) |
 | **Retry/Failure State** | Verified. Exhausts 3 attempts, marks `failed`, sets error. | `src/worker.ts` error handling block |
 | **Invalid/Oversized Upload** | Verified. Returns strict 400 safely. | `src/app/api/upload/route.ts` |
